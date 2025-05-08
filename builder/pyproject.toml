@@ -1,5 +1,5 @@
 [project]
-name = "db"
+name = "builder"
 version = "0.1.0"
 description = "some scripts for building out the qdrant db"
 readme = "README.md"

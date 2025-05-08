@@ -53,11 +53,7 @@ impl Deref for Client {
 pub fn get_inner_vec(v: &ScoredPoint) -> Option<Vec<f32>> {
     v.vectors.as_ref().map(|inner| match inner.vectors_options {
         Some(VectorsOptions::Vector(ref w)) => w.data.clone(),
-        Some(VectorsOptions::Vectors(ref w)) => {
-            println!("{:?}", w.vectors);
-            todo!()
-        }
-        _ => unimplemented!("no sparse vecs in v1"),
+        _ => unreachable!("we're not using sparse vecs!"),
     })
 }
 

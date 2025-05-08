@@ -1,13 +1,15 @@
+use std::cmp::Ordering;
+
 use crate::{
     contexto::{self, Lang},
     qdrant::{self, get_entries_from_response, get_inner_vec},
 };
 use anyhow::Result;
 use async_trait::async_trait;
-use ndarray::{Array2, Axis, arr2};
+use ndarray::{Array1, Array2, Axis, arr2};
 use qdrant_client::qdrant::{Query, QueryPointsBuilder, SearchPointsBuilder};
 
-pub enum Status<T> {
+pub enum Turn<T> {
     Done,
     Bailed(String),
     Next(T),
@@ -17,14 +19,20 @@ pub enum Status<T> {
 pub trait LinearSolver {
     type Target;
 
-    async fn next_step(&self, prev: Self::Target) -> Result<Status<Self::Target>>;
+    async fn next_step(&self, prev: Self::Target) -> Result<Turn<Self::Target>>;
 }
 
 pub async fn solve<S>(seed: S::Target, solver: S)
 where
     S: LinearSolver,
 {
-    solver.next_step(seed).await.unwrap();
+    let mut prev = seed;
+    for _ in 0..100 {
+        prev = match solver.next_step(prev).await.unwrap() {
+            Turn::Next(n) => n,
+            _ => break,
+        };
+    }
 }
 
 pub struct Config {
@@ -38,6 +46,9 @@ pub struct Solver {
     pub qdrant: qdrant::Client,
     pub contexto: contexto::Contexto,
 }
+
+// something with history ?
+struct SolverState; 
 
 impl Solver {
     pub fn new(game_id: u32, collection_name: impl ToString, qdrant: qdrant::Client) -> Self {
@@ -82,28 +93,58 @@ impl Solver {
     }
 }
 
+// TODO: try secant method
+
 #[async_trait]
 impl LinearSolver for Solver {
     type Target = Vec<f32>;
 
-    async fn next_step(&self, query: Self::Target) -> Result<Status<Self::Target>> {
+    async fn next_step(&self, query: Self::Target) -> Result<Turn<Self::Target>> {
+        let dim = query.len();
+
         let response = self
             .qdrant
             .query(
                 QueryPointsBuilder::new(&self.config.collection_name)
-                    .query(Query::new_nearest(query))
+                    .query(Query::new_nearest(query.clone()))
                     .with_payload(true)
                     .with_vectors(true)
                     .limit(2),
             )
             .await?;
 
-        let entries = get_entries_from_response(&response);
+        let mut similar = get_entries_from_response(&response);
+        let e1 = similar.remove(0);
+        let e2 = similar.remove(0);
 
-        // get ranks from contexto api
-        let ranks = tokio::join!(self.play(&entries[0].word), self.play(&entries[1].word));
-        println!("{:?}", ranks);
+        // get rank from contexto api
+        let (r1, r2) = tokio::join!(self.play(&e1.word), self.play(&e2.word));
 
-        Ok(Status::Next(vec![42.0]))
+        // apply numerical methods
+        let r1 = r1.unwrap();
+        let r2 = r2.unwrap();
+
+        let u = Array1::from_shape_vec(dim, e1.embedding)?;
+        let v = Array1::from_shape_vec(dim, e2.embedding)?;
+        let origin = Array1::from_shape_vec(dim, query)?;
+
+        let (chosen, rank) = match r1.cmp(&r2) {
+            Ordering::Less => (u, r1),
+            _ => (v, r2),
+        };
+
+        println!("rank: {rank}");
+
+        if rank == 0 {
+            return Ok(Turn::Done);
+        }
+
+        // step
+        let mut dir = &chosen - &origin;
+        let norm: f32 = dir.mapv(|x| x * x).sum().sqrt();
+        let alpha = norm * (dim as f32).sqrt();
+        let next_query = &chosen + &dir.mapv(|x| 0.1 * x * (rank as f32) / (alpha + 1e-05));
+
+        Ok(Turn::Next(next_query.to_vec()))
     }
 }

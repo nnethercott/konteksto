@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
         client.create_from_dump(FILE, "en").await?;
     }
 
-    let solver = Solver::new(0, "en", client);
+    let solver = Solver::new(6, "en", client);
     solve(solver.generate_seed().await?, solver).await;
 
     Ok(())

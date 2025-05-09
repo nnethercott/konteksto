@@ -1,5 +1,5 @@
 [project]
-name = "builder"
+name = "konteksto-builder"
 version = "0.1.0"
 description = "some scripts for building out the qdrant db"
 readme = "README.md"

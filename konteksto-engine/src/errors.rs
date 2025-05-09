@@ -1,4 +1,5 @@
 use ndarray::ShapeError;
+use qdrant_client::QdrantError;
 
 pub type Result<T> = std::result::Result<T, KontekstoError>;
 
@@ -11,5 +12,8 @@ pub enum KontekstoError {
     ContextoError(#[from] reqwest::Error),
 
     #[error("linalg")]
-    LinalgError(#[from] ShapeError)
+    LinalgError(#[from] ShapeError),
+
+    #[error(transparent)]
+    Other(#[from] QdrantError)
 }

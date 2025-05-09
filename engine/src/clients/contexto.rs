@@ -1,30 +1,18 @@
 use serde::Deserialize;
-use std::ops::Deref;
+use crate::config::Lang;
 
 const CONTEXTO_API_URL: &'static str = "https://api.contexto.me/machado";
 
-pub enum Lang {
-    En,
-    Pt,
-    Es,
-}
-impl ToString for Lang {
-    fn to_string(&self) -> String {
-        match self {
-            Lang::En => "en".to_string(),
-            Lang::Pt => "pt-br".to_string(),
-            Lang::Es => "es".to_string(),
-        }
-    }
-}
-
+#[allow(dead_code)]
 #[derive(Deserialize)]
+/// json schema of the GET /word endpoint
 struct ContextoPayload {
     pub distance: u32,
     pub lemma: String,
     pub word: String,
 }
 
+/// A struct for making api calls to contexto
 pub struct Contexto {
     client: reqwest::Client,
     game_id: u32,

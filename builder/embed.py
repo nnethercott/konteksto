@@ -25,7 +25,7 @@ class EmbeddingDump:
         embeddings = self.model.embed(docs)
 
         for d, e in zip(docs, embeddings):
-            yield {"content": d, "embedding": e.tolist()}
+            yield {"word": d, "embedding": e.tolist()}
 
 
 if __name__ == "__main__":

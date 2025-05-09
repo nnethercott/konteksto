@@ -1,16 +1,14 @@
 use anyhow::Result;
 use qdrant_client::{
     Payload, Qdrant,
-    config::QdrantConfig,
     qdrant::{
-        Condition, CreateCollectionBuilder, Datatype, Distance, Filter, PointStruct, Query,
-        QueryPointsBuilder, QueryResponse, Sample, ScoredPoint, ScrollPointsBuilder,
-        UpsertPointsBuilder, Vector, VectorParamsBuilder, Vectors, vectors_output::VectorsOptions,
+        CreateCollectionBuilder, Datatype, Distance, Filter, PointStruct, Query,
+        QueryPointsBuilder, QueryResponse, Sample, ScoredPoint, UpsertPointsBuilder, VectorParamsBuilder, vectors_output::VectorsOptions,
     },
 };
 use serde::Deserialize;
 use serde_json::json;
-use std::{collections::HashMap, ops::Deref};
+use std::ops::Deref;
 use uuid::Uuid;
 
 /// jsonl schema from python dump
@@ -39,13 +37,16 @@ impl Into<PointStruct> for Entry {
 }
 
 /// a wrapper around a `qdrant::Client` exposing convenience methods
-pub struct Client(Qdrant);
+pub struct Qdrnt {
+    inner: Qdrant,
+    collection: String,
+}
 
-impl Deref for Client {
+impl Deref for Qdrnt {
     type Target = Qdrant;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 
@@ -57,7 +58,7 @@ pub fn get_inner_vec(v: &ScoredPoint) -> Option<Vec<f32>> {
     })
 }
 
-pub fn get_entries_from_response(response: &QueryResponse) -> Vec<Entry> {
+pub fn get_neighbors_from_response(response: &QueryResponse) -> Vec<Entry> {
     let words = response
         .result
         .iter()
@@ -75,51 +76,67 @@ pub fn get_entries_from_response(response: &QueryResponse) -> Vec<Entry> {
         .collect()
 }
 
-impl Client {
-    pub fn from_grpc(grpc_url: &str) -> Result<Self> {
+impl Qdrnt {
+    pub fn new(grpc_url: &str, collection: &str) -> Result<Self> {
         let client = Qdrant::from_url(grpc_url).build()?;
-        Ok(Self(client))
+
+        Ok(Self {
+            inner: client,
+            collection: collection.to_string(),
+        })
     }
-    pub async fn create_from_dump(&self, file: &str, collection_name: &str) -> Result<()> {
+    pub async fn create_from_dump(&self, file: &str) -> Result<()> {
         let entries = Entry::read_from_dump(file)?;
 
         // create collection
         self.create_collection(
-            CreateCollectionBuilder::new(collection_name).vectors_config(
+            CreateCollectionBuilder::new(&self.collection).vectors_config(
                 VectorParamsBuilder::new(entries[0].embedding.len() as u64, Distance::Euclid)
-                    .datatype(Datatype::Float32),
+                    .datatype(Datatype::Float16),
             ),
         )
         .await?;
 
         // upload entries
         let points: Vec<PointStruct> = entries.into_iter().map(Into::into).collect();
-        self.upsert_points(UpsertPointsBuilder::new(collection_name, points))
+        self.upsert_points(UpsertPointsBuilder::new(&self.collection, points))
             .await?;
 
         Ok(())
     }
 
-    pub async fn get_random_vecs(
-        &self,
-        collection_name: &str,
-        how_many: u64,
-    ) -> Result<Vec<Vec<f32>>> {
+    pub async fn get_random_vecs(&self, how_many: u64) -> Result<Vec<Vec<f32>>> {
         let res = self
             .query(
-                QueryPointsBuilder::new(collection_name)
+                QueryPointsBuilder::new(&self.collection)
                     .query(Query::new_sample(Sample::Random))
                     .with_vectors(true)
                     .limit(how_many),
             )
             .await?;
 
-        let mut vectors: Vec<Vec<f32>> =
+        let vectors: Vec<Vec<f32>> =
             res.result.iter().filter_map(|v| get_inner_vec(v)).collect();
         Ok(vectors)
     }
 
-    pub fn sample_near(other: PointStruct, k: usize) -> Result<Vec<PointStruct>> {
-        todo!()
+    pub async fn explore_with_conds(
+        &self,
+        query: &Vec<f32>,
+        condition: Filter,
+        n: u64,
+    ) -> Result<Vec<Entry>> {
+        let response = self
+            .query(
+                QueryPointsBuilder::new(&self.collection)
+                    .query(Query::new_nearest(query.clone()))
+                    .with_payload(true)
+                    .with_vectors(true)
+                    .filter(condition)
+                    .limit(n),
+            )
+            .await?;
+
+        Ok(get_neighbors_from_response(&response))
     }
 }

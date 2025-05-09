@@ -1,17 +1,19 @@
-use std::cmp::Ordering;
-
+use crate::config::OptimizerConfig;
+use crate::errors::Result;
 use crate::{
-    contexto::{self, Lang},
-    qdrant::{self, get_entries_from_response, get_inner_vec},
+    clients::{Contexto, Qdrnt},
+    config::Args,
 };
-use anyhow::Result;
 use async_trait::async_trait;
-use ndarray::{Array1, Array2, Axis, arr2};
-use qdrant_client::qdrant::{Query, QueryPointsBuilder, SearchPointsBuilder};
+use futures::future::join_all;
+use ndarray::{Array1, Array2, Axis};
+use qdrant_client::config;
+use qdrant_client::qdrant::{Condition, Filter};
 
-pub enum Turn<T> {
+#[derive(PartialEq, PartialOrd)]
+pub enum Step<T> {
     Done,
-    Bailed(String),
+    Bailed((String, u32)),
     Next(T),
 }
 
@@ -19,62 +21,98 @@ pub enum Turn<T> {
 pub trait LinearSolver {
     type Target;
 
-    async fn next_step(&self, prev: Self::Target) -> Result<Turn<Self::Target>>;
+    async fn next_step(&mut self, prev: Self::Target) -> Result<Step<Self::Target>>;
+    fn current_best(&self) -> (String, u32);
+    fn reset(&mut self);
 }
 
-pub async fn solve<S>(seed: S::Target, solver: S)
+pub async fn solve<S>(seed: S::Target, solver: &mut S) -> Step<S::Target>
 where
     S: LinearSolver,
 {
     let mut prev = seed;
-    for _ in 0..100 {
-        prev = match solver.next_step(prev).await.unwrap() {
-            Turn::Next(n) => n,
-            _ => break,
-        };
+
+    loop {
+        match solver.next_step(prev).await.unwrap() {
+            Step::Next(next) => prev = next,
+            other => return other, // Done or Bailed
+        }
+    }
+    Step::Bailed(solver.current_best())
+}
+
+pub async fn solve_with_restarts<S>(
+    solver: &mut S,
+    seeds: Vec<S::Target>,
+    settings: &OptimizerConfig,
+) -> (String, u32)
+where
+    S: LinearSolver,
+    <S as LinearSolver>::Target: PartialEq,
+{
+    let mut sols = vec![];
+
+    for seed in seeds {
+        println!("\nnew seed");
+        if solve(seed, solver).await == Step::Done {
+            return solver.current_best();
+        }
+
+        sols.push(solver.current_best());
+        solver.reset();
+    }
+
+    let best = sols.into_iter().min_by_key(|(_, k)| *k).unwrap();
+    best
+}
+
+struct SolverState {
+    iter: usize,
+    grad: Array1<f32>,
+    best: (String, u32),
+    blacklist: Vec<String>,
+    settings: OptimizerConfig,
+}
+
+impl SolverState {
+    fn from_config(settings: OptimizerConfig) -> Self {
+        Self {
+            iter: 0,
+            grad: Array1::zeros(1),
+            best: ("init".to_string(), 20000),
+            blacklist: vec![],
+            settings,
+        }
     }
 }
 
-pub struct Config {
-    collection_name: String,
-    lang: Lang,
-}
-
-/// A struct containing logic to solve Contexto
+/// A struct implementing logic to solve Contexto
 pub struct Solver {
-    pub config: Config,
-    pub qdrant: qdrant::Client,
-    pub contexto: contexto::Contexto,
+    state: SolverState,
+    pub qdrant: Qdrnt,
+    pub contexto: Contexto,
 }
-
-// something with history ?
-struct SolverState; 
 
 impl Solver {
-    pub fn new(game_id: u32, collection_name: impl ToString, qdrant: qdrant::Client) -> Self {
-        let config = Config {
-            collection_name: collection_name.to_string(),
-            lang: Lang::En,
-        };
+    pub fn new(config: Args, qdrant: Qdrnt) -> Self {
+        let contexto = Contexto::new(config.game_config.lang, config.game_config.game_id);
+        let state = SolverState::from_config(config.optimizer_config);
 
         Self {
             qdrant,
-            config,
-            contexto: contexto::Contexto::new(Lang::En, game_id),
+            contexto,
+            state,
         }
     }
 
     /// send request to contexto api for current game
-    async fn play(&self, word: &str) -> reqwest::Result<u32> {
-        self.contexto.play(word).await
+    async fn play(&self, word: &str) -> Result<u32> {
+        Ok(self.contexto.play(word).await?)
     }
 
     /// radomly generate seed at game start
-    pub async fn generate_seed(&self) -> Result<Vec<f32>> {
-        let vecs = &self
-            .qdrant
-            .get_random_vecs(&self.config.collection_name, 32)
-            .await?;
+    pub async fn generate_seed(&self, from: u64) -> Result<Vec<f32>> {
+        let vecs = &self.qdrant.get_random_vecs(from).await?;
 
         let dim = vecs[0].len();
         let seeds = Array2::from_shape_vec(
@@ -93,58 +131,94 @@ impl Solver {
     }
 }
 
-// TODO: try secant method
-
 #[async_trait]
 impl LinearSolver for Solver {
     type Target = Vec<f32>;
 
-    async fn next_step(&self, query: Self::Target) -> Result<Turn<Self::Target>> {
+    async fn next_step(&mut self, query: Self::Target) -> Result<Step<Self::Target>> {
+        if self.state.iter >= self.state.settings.max_iters {
+            return Ok(Step::Bailed(self.current_best()));
+        }
+        self.state.iter += 1;
+
         let dim = query.len();
 
-        let response = self
+        // explore nearby samples with blacklist
+        let conds: Vec<Condition> = self
+            .state
+            .blacklist
+            .iter()
+            .map(|w| Condition::matches("word", w.clone()))
+            .collect();
+
+        let neighbors = self
             .qdrant
-            .query(
-                QueryPointsBuilder::new(&self.config.collection_name)
-                    .query(Query::new_nearest(query.clone()))
-                    .with_payload(true)
-                    .with_vectors(true)
-                    .limit(2),
-            )
+            .explore_with_conds(&query, Filter::must_not(conds), 3)
             .await?;
 
-        let mut similar = get_entries_from_response(&response);
-        let e1 = similar.remove(0);
-        let e2 = similar.remove(0);
+        // prevent from exploring those words next iteration (tabu-like)
+        self.state
+            .blacklist
+            .extend(neighbors.iter().map(|e| e.word.clone()));
 
-        // get rank from contexto api
-        let (r1, r2) = tokio::join!(self.play(&e1.word), self.play(&e2.word));
+        // try each guess with contexto api
+        let ranks = join_all(neighbors.iter().map(|entry| self.play(&entry.word))).await;
 
-        // apply numerical methods
-        let r1 = r1.unwrap();
-        let r2 = r2.unwrap();
+        let mut scored_neighbors: Vec<_> = neighbors
+            .into_iter()
+            .zip(ranks)
+            .filter_map(|(entry, result)| {
+                result.ok().map(|rank| (entry.word, entry.embedding, rank))
+            })
+            .collect();
 
-        let u = Array1::from_shape_vec(dim, e1.embedding)?;
-        let v = Array1::from_shape_vec(dim, e2.embedding)?;
-        let origin = Array1::from_shape_vec(dim, query)?;
-
-        let (chosen, rank) = match r1.cmp(&r2) {
-            Ordering::Less => (u, r1),
-            _ => (v, r2),
-        };
-
-        println!("rank: {rank}");
-
-        if rank == 0 {
-            return Ok(Turn::Done);
+        if scored_neighbors.is_empty() {
+            return Err(anyhow::anyhow!("No neighbors found").into());
         }
 
-        // step
-        let mut dir = &chosen - &origin;
-        let norm: f32 = dir.mapv(|x| x * x).sum().sqrt();
-        let alpha = norm * (dim as f32).sqrt();
-        let next_query = &chosen + &dir.mapv(|x| 0.1 * x * (rank as f32) / (alpha + 1e-05));
+        // find optimal neighbor
+        scored_neighbors.sort_by_key(|(_, _, rank)| *rank);
+        let (best_word, best_embedding, best_rank) = &scored_neighbors[0];
+        println!(
+            r#"guess: "{best_word}" rank: {best_rank}, best: {:?}"#,
+            self.state.best
+        );
 
-        Ok(Turn::Next(next_query.to_vec()))
+        // if current score is worse (within a tolerance) don't explore
+        if *best_rank < self.state.best.1 {
+            self.state.best = (best_word.to_owned(), *best_rank);
+        } else if *best_rank > self.state.settings.margin {
+            return Ok(Step::Next(query));
+        };
+
+        // early stopping
+        if *best_rank == 0 {
+            return Ok(Step::Done);
+        }
+
+        // hill climbing with momentum
+        let origin = Array1::from_shape_vec(dim, query.clone())?;
+        let chosen = Array1::from_shape_vec(dim, best_embedding.clone())?;
+
+        let dir = &chosen - &origin;
+        let g = dir * (self.state.best.1 as f32) / (*best_rank as f32);
+
+        let beta = self.state.settings.beta;
+        self.state.grad = beta * &self.state.grad + (1.0 - beta) * g;
+        let next_query = origin + &self.state.grad;
+
+        Ok(Step::Next(next_query.to_vec()))
+    }
+
+    fn current_best(&self) -> (String, u32) {
+        let best = &self.state.best;
+        (best.0.clone(), best.1.clone())
+    }
+
+    fn reset(&mut self) {
+        self.state.best = ("".to_string(), u32::MAX);
+        self.state.blacklist.clear();
+        self.state.grad = Array1::zeros(1);
+        self.state.iter = 0;
     }
 }

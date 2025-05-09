@@ -1,21 +1,41 @@
 use anyhow::Result;
+use clap::Parser;
 use engine::{
-    qdrant::{Client, Entry},
-    solver::{solve, Solver},
+    clients::Qdrnt,
+    config::Args,
+    solver::{Solver, solve_with_restarts},
 };
-use qdrant_client::qdrant::{Query, QueryPointsBuilder, Sample, SearchPointsBuilder};
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    let client = Client::from_grpc("http://localhost:6334")?;
+    let config = Args::parse();
+    dbg!("{:?}", &config);
 
-    if !client.collection_exists("en").await? {
-        const FILE: &'static str = "../data/embeds/en-embeds.txt"; // FIXME!
-        client.create_from_dump(FILE, "en").await?;
+    let collection = &config.game_config.lang.to_string();
+
+    // establish connection to vector db
+    let client = Qdrnt::new(
+        &format!("http://localhost:{}", &config.qdrant_config.grpc_port),
+        collection,
+    )?;
+
+    // build collcetion if !exists
+    if !client.collection_exists(collection).await? {
+        println!("building qdrant index !");
+        let file = format!("./data/embeds/{}-embeds.txt", collection);
+        client.create_from_dump(&file).await?;
     }
 
-    let solver = Solver::new(6, "en", client);
-    solve(solver.generate_seed().await?, solver).await;
+    // solve with restarts
+    let mut solver = Solver::new(config.clone(), client);
+    let max_retries = config.optimizer_config.max_retries;
+    let mut seeds = vec![];
+    for _ in 0..max_retries {
+        seeds.push(solver.generate_seed(2).await?);
+    }
+
+    let best = solve_with_restarts(&mut solver, seeds, &config.optimizer_config).await;
+    dbg!("{:?}", best);
 
     Ok(())
 }

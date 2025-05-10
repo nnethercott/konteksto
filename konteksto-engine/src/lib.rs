@@ -22,12 +22,14 @@ pub async fn setup(config: Args) -> crate::errors::Result<Solver> {
         let file = format!("./data/embeds/{}-embeds.txt", &lang);
 
         if Path::new(&file).exists() {
-            if !client.collection_exists(collection).await? {
+            if !client.collection_exists(&lang).await? {
                 println!("building qdrant index for {}", &lang);
                 client
                     .create_from_dump(&file, Some(&lang))
                     .await?;
             }
+        }else{
+            println!("WARN: embeddings for lang '{}' not found", &lang);
         }
     }
 

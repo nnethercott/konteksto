@@ -154,16 +154,17 @@ impl Qdrnt {
             .await
             .ok()?;
 
-        // same logic as for ScoredPoint...
-        let v = response.result[0]
+        if response.result.len() == 0{
+            println!("WARN: word not found");
+            return None;
+        }
+        response.result[0]
             .vectors
             .as_ref()
             .map(|inner| match inner.vectors_options {
                 Some(VectorsOptions::Vector(ref w)) => w.data.clone(),
                 _ => unreachable!("we're not using sparse vecs!"),
-            });
-
-        v
+            })
     }
 
     pub async fn get_word(&self, embedding: Vec<f32>) -> Result<String> {

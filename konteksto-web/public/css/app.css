@@ -1,0 +1,33 @@
+.guesses-container, .input-container {
+    width: 400px;
+    margin: 1rem auto;
+}
+
+.input-container {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.input-container .is-expanded {
+    flex-grow: 1;
+    flex-basis: 75%;
+}
+
+.input-container .button-control {
+    flex-shrink: 0;
+    width: auto;
+}
+
+.compact-box {
+    padding: 0.5rem;
+    min-height: 0;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.score {
+    font-weight: bold;
+}

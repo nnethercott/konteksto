@@ -1,23 +1,21 @@
-use crate::server::AppState;
 use axum::{Router, routing::get};
 use back::{play, suggest};
-use front::{another_route, hello};
+use front::main;
+use crate::state::AppState;
 
 pub mod back;
 pub mod front;
 
 /// available routes for web app
 pub fn get_routes() -> Router<AppState> {
-    // let backend = Router::new()
-    //     .route("/play", get(play))
-    //     .route("/suggest", suggest);
+    let backend_routes = Router::new()
+        .route("/play", get(play))
+        .route("/suggest", get(suggest));
 
-    let frontend = Router::new()
-        .route("/", get(hello))
-        .route("/nate", get(another_route));
+    let frontend_routes = Router::new()
+        .route("/", get(main));
 
-    // TODO: add a redirect from / to /en/game/42/play
     Router::new()
-        .merge(frontend)
-        // .nest("/{lang}/game/{id}/play", backend)
+        .nest("/{lang}/game/{id}/", frontend_routes)
+        .nest("/api/{lang}/game/{id}/", backend_routes)
 }

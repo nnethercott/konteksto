@@ -3,9 +3,9 @@ use crate::config::Lang;
 
 const CONTEXTO_API_URL: &'static str = "https://api.contexto.me/machado";
 
+/// json schema of the GET /word endpoint
 #[allow(dead_code)]
 #[derive(Deserialize)]
-/// json schema of the GET /word endpoint
 struct ContextoPayload {
     pub distance: u32,
     pub lemma: String,

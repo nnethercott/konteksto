@@ -18,11 +18,11 @@ for lang in en pt-br es; do
 
   # build search space from Contexto API
   if [ ! -f "$WORDS" ]; then
-    uv run builder/scrape.py --lang "$lang" --out-file "$WORDS"
+    uv run konteksto-builder/scrape.py --lang "$lang" --out-file "$WORDS"
   fi
 
   # generate embeddings
   if [ ! -f "$EMBEDS" ]; then
-    uv run builder/embed.py --in-file "$WORDS" --out-file "$EMBEDS" --model "$MODEL"
+    uv run konteksto-builder/embed.py --in-file "$WORDS" --out-file "$EMBEDS" --model "$MODEL"
   fi
 done

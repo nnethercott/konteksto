@@ -6,6 +6,7 @@ use serde::{self, Deserialize, Serialize};
 const QDRANT_SERVICE_GRPC_PORT: &str = "QDRANT__SERVICE__GRPC_PORT";
 
 #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum Lang {
     #[default]
     En,

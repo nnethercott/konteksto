@@ -2,7 +2,7 @@ use clap::Parser;
 use konteksto_engine::Args;
 use konteksto_web::{config::{DbConfig, ServerConfig, Settings}, server::App};
 
-#[tokio::main]
+#[tokio::main(flavor="current_thread")]
 async fn main() -> anyhow::Result<()>{
     let args = Args::parse();
 

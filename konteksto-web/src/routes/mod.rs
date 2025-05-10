@@ -1,37 +1,23 @@
-use axum::{Router, routing::get};
-use maud::{Markup, html};
-
 use crate::server::AppState;
+use axum::{Router, routing::get};
+use back::{play, suggest};
+use front::{another_route, hello};
 
-pub mod play;
-pub mod suggest;
+pub mod back;
+pub mod front;
 
-async fn hello() -> Markup {
-    html! {
-        head{
-            script src="https://unpkg.com/htmx.org@2.0.4" {}
-        }
-        body {
-            h2{"hello, world"}
-
-            button
-                hx-get="/nate"
-                hx-target="body"
-                {
-                    "Click Me!"
-                }
-        }
-    }
-}
-
-async fn another_route() -> Markup {
-    html! {
-        p{"nate was here"}
-    }
-}
-
+/// available routes for web app
 pub fn get_routes() -> Router<AppState> {
-    Router::new()
+    // let backend = Router::new()
+    //     .route("/play", get(play))
+    //     .route("/suggest", suggest);
+
+    let frontend = Router::new()
         .route("/", get(hello))
-        .route("/nate", get(another_route))
+        .route("/nate", get(another_route));
+
+    // TODO: add a redirect from / to /en/game/42/play
+    Router::new()
+        .merge(frontend)
+        // .nest("/{lang}/game/{id}/play", backend)
 }

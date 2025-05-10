@@ -1,9 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use konteksto_engine::{
-    clients::Qdrnt,
     config::Args,
-    solver::{Solver, solve_with_restarts},
+    solver::solve_with_restarts,
 };
 use konteksto_engine::setup;
 

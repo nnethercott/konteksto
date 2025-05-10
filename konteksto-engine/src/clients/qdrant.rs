@@ -2,14 +2,17 @@ use anyhow::Result;
 use qdrant_client::{
     Payload, Qdrant,
     qdrant::{
-        CreateCollectionBuilder, Datatype, Distance, Filter, PointStruct, Query,
-        QueryPointsBuilder, QueryResponse, Sample, ScoredPoint, UpsertPointsBuilder, VectorParamsBuilder, vectors_output::VectorsOptions,
+        Condition, CreateCollectionBuilder, Datatype, Distance, Filter, PointStruct, Query,
+        QueryPointsBuilder, QueryResponse, Sample, ScoredPoint, ScrollPointsBuilder,
+        UpsertPointsBuilder, VectorParamsBuilder, vectors_output::VectorsOptions,
     },
 };
 use serde::Deserialize;
 use serde_json::json;
 use std::ops::Deref;
 use uuid::Uuid;
+
+use crate::config::QdrntConfig;
 
 /// jsonl schema from python dump
 #[derive(Deserialize, Debug)]
@@ -39,7 +42,7 @@ impl Into<PointStruct> for Entry {
 /// a wrapper around a `qdrant::Client` exposing convenience methods
 pub struct Qdrnt {
     inner: Qdrant,
-    collection: String,
+    pub collection: String,
 }
 
 impl Deref for Qdrnt {
@@ -77,20 +80,21 @@ pub fn get_neighbors_from_response(response: &QueryResponse) -> Vec<Entry> {
 }
 
 impl Qdrnt {
-    pub fn new(grpc_url: &str, collection: &str) -> Result<Self> {
-        let client = Qdrant::from_url(grpc_url).build()?;
+    pub fn new(config: QdrntConfig) -> Result<Self> {
+        let grpc_port = format!("http://localhost:{}", &config.grpc_port);
+        let inner = Qdrant::from_url(&grpc_port).build()?;
 
-        Ok(Self {
-            inner: client,
-            collection: collection.to_string(),
-        })
+        let collection = config.collection.to_string();
+
+        Ok(Self { inner, collection })
     }
-    pub async fn create_from_dump(&self, file: &str) -> Result<()> {
+    pub async fn create_from_dump(&self, file: &str, collection: Option<&str>) -> Result<()> {
+        let collection = collection.unwrap_or(&self.collection);
         let entries = Entry::read_from_dump(file)?;
 
         // create collection
         self.create_collection(
-            CreateCollectionBuilder::new(&self.collection).vectors_config(
+            CreateCollectionBuilder::new(collection).vectors_config(
                 VectorParamsBuilder::new(entries[0].embedding.len() as u64, Distance::Euclid)
                     .datatype(Datatype::Float16),
             ),
@@ -115,8 +119,7 @@ impl Qdrnt {
             )
             .await?;
 
-        let vectors: Vec<Vec<f32>> =
-            res.result.iter().filter_map(|v| get_inner_vec(v)).collect();
+        let vectors: Vec<Vec<f32>> = res.result.iter().filter_map(|v| get_inner_vec(v)).collect();
         Ok(vectors)
     }
 
@@ -138,5 +141,49 @@ impl Qdrnt {
             .await?;
 
         Ok(get_neighbors_from_response(&response))
+    }
+
+    pub async fn get_embedding(&self, word: String) -> Option<Vec<f32>> {
+        let response = self
+            .scroll(
+                ScrollPointsBuilder::new(&self.collection)
+                    .filter(Filter::must([Condition::matches("word", word)]))
+                    .limit(1)
+                    .with_vectors(true),
+            )
+            .await
+            .ok()?;
+
+        // same logic as for ScoredPoint...
+        let v = response.result[0]
+            .vectors
+            .as_ref()
+            .map(|inner| match inner.vectors_options {
+                Some(VectorsOptions::Vector(ref w)) => w.data.clone(),
+                _ => unreachable!("we're not using sparse vecs!"),
+            });
+
+        v
+    }
+
+    pub async fn get_word(&self, embedding: Vec<f32>) -> Result<String> {
+        let response = self
+            .query(
+                QueryPointsBuilder::new(&self.collection)
+                    .query(Query::new_nearest(embedding))
+                    .with_payload(true)
+                    .limit(1),
+            )
+            .await?;
+
+        let word = response.result[0]
+            .payload
+            .get("word")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        Ok(word)
     }
 }

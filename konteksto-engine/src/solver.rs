@@ -7,14 +7,15 @@ use crate::{
 use async_trait::async_trait;
 use futures::future::join_all;
 use ndarray::{Array1, Array2, Axis};
-use qdrant_client::config;
 use qdrant_client::qdrant::{Condition, Filter};
+
+pub type Attempt = (String, u32);
 
 #[derive(PartialEq, PartialOrd)]
 pub enum Step<T> {
     Done,
     Bailed((String, u32)),
-    Next(T),
+    Next(Attempt, T),
 }
 
 #[async_trait]
@@ -22,7 +23,7 @@ pub trait LinearSolver {
     type Target;
 
     async fn next_step(&mut self, prev: Self::Target) -> Result<Step<Self::Target>>;
-    fn current_best(&self) -> (String, u32);
+    fn current_best(&self) -> Attempt;
     fn reset(&mut self);
 }
 
@@ -34,7 +35,13 @@ where
 
     loop {
         match solver.next_step(prev).await.unwrap() {
-            Step::Next(next) => prev = next,
+            Step::Next(attempt, next) => {
+                println!(
+                    r#"guess: {:?}, best: {:?}"#,
+                    attempt, solver.current_best()
+                );
+                prev = next
+            }
             other => return other, // Done or Bailed
         }
     }
@@ -69,7 +76,7 @@ where
 struct SolverState {
     iter: usize,
     grad: Array1<f32>,
-    best: (String, u32),
+    best: Attempt,
     blacklist: Vec<String>,
     settings: OptimizerConfig,
 }
@@ -108,6 +115,10 @@ impl Solver {
     /// send request to contexto api for current game
     async fn play(&self, word: &str) -> Result<u32> {
         Ok(self.contexto.play(word).await?)
+    }
+
+    pub fn ban_words(&mut self, words: Vec<String>) {
+        self.state.blacklist.extend(words);
     }
 
     /// radomly generate seed at game start
@@ -157,9 +168,7 @@ impl LinearSolver for Solver {
             .await?;
 
         // prevent from exploring those words next iteration (tabu-like)
-        self.state
-            .blacklist
-            .extend(neighbors.iter().map(|e| e.word.clone()));
+        self.ban_words(neighbors.iter().map(|e| e.word.clone()).collect());
 
         // try each guess with contexto api
         let ranks = join_all(neighbors.iter().map(|entry| self.play(&entry.word))).await;
@@ -179,16 +188,13 @@ impl LinearSolver for Solver {
         // find optimal neighbor
         scored_neighbors.sort_by_key(|(_, _, rank)| *rank);
         let (best_word, best_embedding, best_rank) = &scored_neighbors[0];
-        println!(
-            r#"guess: "{best_word}" rank: {best_rank}, best: {:?}"#,
-            self.state.best
-        );
+        let attempt = (best_word.to_owned(), *best_rank);
 
         // if current score is worse (within a tolerance) don't explore
         if *best_rank < self.state.best.1 {
-            self.state.best = (best_word.to_owned(), *best_rank);
+            self.state.best = attempt.clone();
         } else if *best_rank > self.state.settings.margin {
-            return Ok(Step::Next(query));
+            return Ok(Step::Next(attempt, query));
         };
 
         // early stopping
@@ -207,7 +213,7 @@ impl LinearSolver for Solver {
         self.state.grad = beta * &self.state.grad + (1.0 - beta) * g;
         let next_query = origin + &self.state.grad;
 
-        Ok(Step::Next(next_query.to_vec()))
+        Ok(Step::Next(attempt, next_query.to_vec()))
     }
 
     fn current_best(&self) -> (String, u32) {

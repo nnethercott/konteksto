@@ -5,9 +5,10 @@ use serde::{self, Deserialize, Serialize};
 
 const QDRANT_SERVICE_GRPC_PORT: &str = "QDRANT__SERVICE__GRPC_PORT";
 
-#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub enum Lang {
-    #[default] En,
+    #[default]
+    En,
     Pt,
     Es,
 }
@@ -42,7 +43,7 @@ pub struct Args {
 
     #[serde(flatten)]
     #[clap(flatten)]
-    pub qdrant_config: QdrantConfig,
+    pub qdrant_config: QdrntConfig,
 
     #[serde(flatten)]
     #[clap(flatten)]
@@ -50,7 +51,7 @@ pub struct Args {
 }
 
 #[derive(Parser, Serialize, Deserialize, Debug, Copy, Clone)]
-pub struct GameConfig{
+pub struct GameConfig {
     /// id of game as seen on screen
     #[clap(long, default_value_t = 42)]
     pub game_id: u32,
@@ -62,10 +63,13 @@ pub struct GameConfig{
 }
 
 #[derive(Parser, Serialize, Deserialize, Debug, Copy, Clone)]
-pub struct QdrantConfig{
+pub struct QdrntConfig {
     /// grpc port where qdrant db is running on
     #[clap(long, env = QDRANT_SERVICE_GRPC_PORT, default_value_t=6334)]
     pub grpc_port: u32,
+
+    #[clap(long, default_value = "en")]
+    pub collection: Lang,
 }
 
 #[derive(Parser, Default, Serialize, Deserialize, Debug, Copy, Clone)]

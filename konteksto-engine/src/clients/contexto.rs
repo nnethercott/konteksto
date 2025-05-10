@@ -13,10 +13,11 @@ struct ContextoPayload {
 }
 
 /// A struct for making api calls to contexto
+#[derive(Clone)]
 pub struct Contexto {
     client: reqwest::Client,
-    game_id: u32,
-    lang: Lang,
+    pub game_id: u32,
+    pub lang: Lang,
 }
 impl Contexto {
     pub fn new(lang: Lang, game_id: u32) -> Self {

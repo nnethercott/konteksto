@@ -6,9 +6,8 @@ use konteksto_engine::{
     config::Lang,
     solver::{LinearSolver, Step},
 };
-use std::sync::Mutex as StdMutex;
 use std::{ops::Deref, sync::Arc};
-use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::Mutex;
 
 /// Internal state of web server handling all game logic
 #[derive(Clone)]
@@ -22,9 +21,9 @@ impl Deref for AppState {
 
 pub struct InnerState {
     pub sqlite: SqliteClient,
-    pub engine: TokioMutex<Solver>,
-    pub contexto_api: TokioMutex<Contexto>,
-    pub suggestion: TokioMutex<String>,
+    pub engine: Mutex<Solver>,
+    pub contexto_api: Mutex<Contexto>,
+    pub suggestion: Mutex<String>,
 }
 impl InnerState {
     pub async fn from_config(config: &Settings) -> Result<Self> {
@@ -34,27 +33,46 @@ impl InnerState {
         let engine = konteksto_engine::setup(config.engine.clone()).await?;
         let contexto_api = engine.contexto.clone();
 
+        // random seed for suggestion
+        let random_vec = engine.generate_seed(1).await?;
+        let random_word = engine.qdrant.get_word(random_vec).await?;
+        println!("random: {}", &random_word);
+
         Ok(Self {
             sqlite: SqliteClient::new(pool),
-            engine: TokioMutex::new(engine),
-            contexto_api: TokioMutex::new(contexto_api),
-            suggestion: TokioMutex::new("random".into()),
+            engine: Mutex::new(engine),
+            contexto_api: Mutex::new(contexto_api),
+            suggestion: Mutex::new(random_word),
         })
     }
 
-    pub async fn maybe_update_internals(&self, lang: Lang, game_id: u32) {
-        let k = &mut self.engine.lock().await;
+    /// manual reset
+    pub async fn maybe_reset(&self, lang: Lang, game_id: u32) -> Result<()> {
+        let engine = &mut self.engine.lock().await;
 
-        if lang != k.contexto.lang || game_id != k.contexto.game_id {
+        if lang != engine.contexto.lang || game_id != engine.contexto.game_id {
             // state
             println!("updating to {:?} and {}", &lang, game_id);
-            k.qdrant.collection = lang.to_string();
-            k.contexto = Contexto::new(lang, game_id);
-            k.reset();
+            engine.qdrant.collection = lang.to_string();
+            engine.contexto = Contexto::new(lang, game_id);
+            engine.reset();
 
-            // our own connection
-            *self.contexto_api.lock().await = Contexto::new(lang, game_id);
+            // api
+            {
+                *self.contexto_api.lock().await = Contexto::new(lang, game_id);
+            }
+
+            // db
+            self.sqlite.delete_all_guesses().await?;
+
+            // new random suggestion
+            {
+                let random_vec = engine.generate_seed(1).await?;
+                let mut s = self.suggestion.lock().await;
+                *s = engine.qdrant.get_word(random_vec).await?;
+            }
         }
+        Ok(())
     }
 
     pub async fn play(&self, word: &str) -> Result<u32> {
@@ -63,24 +81,37 @@ impl InnerState {
             .await
             .play(&word)
             .await
-            .map_err(|_| anyhow::anyhow!("failed to play turn with contexto"))
+            .map_err(|e| anyhow::anyhow!("failed to play turn with contexto\n{:?}", e))
     }
 
+    /// Manually step the engine and generate a new suggestion
+    /// variant of algo in konteksto-engine/solver.rs
     pub async fn notify_solver(&self, word: String) -> Result<()> {
         let solver = &mut self.engine.lock().await;
 
-        solver.ban_words(vec![word.clone()]);
-
-        let embed = match solver.qdrant.get_embedding(word.clone()).await {
+        let embed = match solver.qdrant.get_embedding(word).await {
             Some(v) => v,
             None => anyhow::bail!("word not found"),
         };
 
-        // NOTE: returns previous guess if it was worse than our best
-        // idea: sample near
+        let prev_best = solver.current_best();
         let suggestion = match solver.next_step(embed).await? {
-            Step::Next(attempt, vector) => solver.qdrant.get_word(vector).await?,
-            Step::Done => word,
+            Step::Next(attempt, next_query) => {
+                println!("best: {:?}, attempt: {:?}", &prev_best, &attempt);
+
+                // if no change re-use a word near the local min
+                let best_query = if attempt.1 > prev_best.1{
+                    println!("algo wrong");
+                    solver.qdrant.get_embedding(prev_best.0).await.unwrap()
+                }else{
+                    println!("algo right");
+                    next_query
+                };
+
+                let mut nearest_neighbors = solver.query_unseen(best_query, 1).await?;
+                nearest_neighbors.remove(0).word
+            }
+            Step::Done => solver.current_best().0,
             _ => unreachable!(),
         };
         println!("suggestion: {}", &suggestion);

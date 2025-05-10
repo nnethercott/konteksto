@@ -17,7 +17,7 @@ impl ToString for Lang {
     fn to_string(&self) -> String {
         match self {
             Lang::En => "en".to_string(),
-            Lang::Pt => "pt-br".to_string(),
+            Lang::Pt => "pt".to_string(),
             Lang::Es => "es".to_string(),
         }
     }

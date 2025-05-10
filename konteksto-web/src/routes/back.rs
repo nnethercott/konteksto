@@ -1,8 +1,11 @@
 use anyhow::Result;
 use axum::extract::{Path, Query, State};
+use axum::Form;
 use konteksto_engine::config::Lang;
+use maud::{html, Markup};
 use serde::Deserialize;
 
+use crate::errors::Result as AppResult;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -10,32 +13,46 @@ pub struct PlayQuery {
     pub word: String,
 }
 
-/// GET `api/{lang}/game/{id}/play?word={word}`
+/// POST `api/{lang}/game/{id}/play`
 pub async fn play(
-    Query(PlayQuery { word }): Query<PlayQuery>,
     Path((lang, game_id)): Path<(Lang, u32)>,
-    state: State<AppState>,
-) {
-    println!("inside");
-    let mut app_state = state.0;
+    State(AppState(app_state)): State<AppState>,
+    Form(PlayQuery { word }): Form<PlayQuery>,
+) -> AppResult<()> {
+    app_state.maybe_reset(lang, game_id).await?;
 
-    app_state.maybe_update_internals(lang, game_id).await;
-
-    // insert guess into db
-    let score = app_state.play(&word).await.unwrap();
+    let score = app_state.play(&word).await?;
     println!("score: {}", score);
 
-    // app_state.sqlite.register_guess(&word, score).await.unwrap();
+    app_state.sqlite.register_guess(&word, score).await?;
 
     // update recommender engine
     app_state.notify_solver(word).await;
+
+    Ok(())
 }
 
-/// GET `api/{lang}/game/{id}/suggest`
-pub async fn suggest(path: Path<(Lang, u32)>, state: State<AppState>) -> String {
-    let mut app_state = state.0;
-    let (lang, game_id) = path.0;
-    app_state.maybe_update_internals(lang, game_id).await;
+/// POST `api/{lang}/game/{id}/suggest`
+pub async fn suggest(
+    Path((lang, game_id)): Path<(Lang, u32)>,
+    State(AppState(app_state)): State<AppState>,
+) -> AppResult<Markup> {
+    app_state.maybe_reset(lang, game_id).await;
 
-    app_state.suggestion.lock().await.clone()
+    let suggestion = app_state.suggestion.lock().await.clone();
+    println!("{}", suggestion);
+
+    // swaps outer html
+    Ok(html! {
+        input
+            id="guess-input"
+            type="text"
+            name="word"
+            class="input"
+            placeholder="type a word"
+            value=(suggestion)
+            hx-trigger="keydown[key==='Enter'&&!shiftKey]"
+            hx-post=(format!("/api/{}/game/{}/play", lang.to_string(), game_id))
+            hx-on::after-request="if(event.detail.successful) window.location.reload();";
+    })
 }

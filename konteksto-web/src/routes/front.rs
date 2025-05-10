@@ -1,23 +1,42 @@
-use axum::{extract::Path, response::IntoResponse, routing::get, Router};
+use crate::{db::Attempt, errors::Result as AppResult, server::App, state::AppState};
+use axum::{
+    Router,
+    extract::{Path, State},
+    response::IntoResponse,
+};
 use konteksto_engine::config::Lang;
 use maud::{DOCTYPE, Markup, Render, html};
 use sqlx::query::Query;
-use crate::db::Guess;
 
-pub async fn main(Path((lang, game_id)): Path<(Lang, u32)>) -> Markup {
-    let guesses = vec![Guess{word: "nate".into(), score: 20}];
-    let home = Home{lang, game_id, guesses};
-    home.render()
+pub async fn main(
+    Path((lang, game_id)): Path<(Lang, u32)>,
+    State(AppState(app)): State<AppState>,
+) -> AppResult<Markup> {
+    app.maybe_reset(lang, game_id).await?;
+
+    // get attempts ordered by score
+    let mut guesses = app.sqlite.all_guesses().await?;
+    guesses.sort_by_key(|a| a.score);
+
+    let home = Home {
+        lang,
+        game_id,
+        guesses,
+    };
+    Ok(home.render())
 }
 
+/// home page for the app
 pub struct Home {
     game_id: u32,
     lang: Lang,
-    guesses: Vec<Guess>,
+    guesses: Vec<Attempt>,
 }
 
 impl Render for Home {
     fn render(&self) -> Markup {
+        let api_stub = format!("/api/{}/game/{}", self.lang.to_string(), self.game_id);
+
         html! {
             (DOCTYPE)
             head {
@@ -31,30 +50,32 @@ impl Render for Home {
                 main .section {
                     .container.has-text-centered {
                         h1 .title { "Kontektso" }
-                        
+
                         // Input and button
                         div .input-container {
                             .control.is-expanded {
                                 input
-                                    hx-trigger="keydown[key==='Enter'&&!shiftKey]"
-                                    hx-get=(format!("/api/{}/game/{}/play", self.lang.to_string(), self.game_id))
+                                    id="guess-input"
                                     type="text"
+                                    name="word"
                                     class="input"
                                     placeholder="type a word"
-                                    name="word";
+                                    hx-trigger="keydown[key==='Enter'&&!shiftKey]"
+                                    hx-post=(format!("{}/play", api_stub))
+                                    hx-on::after-request="if(event.detail.successful) window.location.reload();";
                             }
                             .control.button-control {
                                 button
                                     class="button is-link"
-                                    hx-get="/foobar"
-                                    hx-target="#guesses"
-                                    hx-include="closest form"
+                                    hx-post=(format!("{}/suggest", api_stub))
+                                    hx-target="#guess-input"
+                                    hx-swap="outerHTML"
                                     {
                                         "Suggest"
                                     }
                             }
                         }
-                        
+
                         // Guesses list in a fixed-width div
                         div .guesses-container {
                             ul #guesses {
@@ -70,11 +91,11 @@ impl Render for Home {
     }
 }
 
-fn render_guess(g: &Guess) -> Markup {
+fn render_guess(g: &Attempt) -> Markup {
     html! {
-        li .box.compact-box {
+        li .box.my-2.compact-box {
             span .word { (g.word) }
-            span .score { (g.score) }
+            span .score { (g.score + 1) }
         }
     }
 }

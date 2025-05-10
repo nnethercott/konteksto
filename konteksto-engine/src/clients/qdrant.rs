@@ -2,9 +2,10 @@ use anyhow::Result;
 use qdrant_client::{
     Payload, Qdrant,
     qdrant::{
-        Condition, CreateCollectionBuilder, Datatype, Distance, Filter, PointStruct, Query,
-        QueryPointsBuilder, QueryResponse, Sample, ScoredPoint, ScrollPointsBuilder,
-        UpsertPointsBuilder, VectorParamsBuilder, vectors_output::VectorsOptions,
+        Condition, CountPointsBuilder, CreateCollectionBuilder, Datatype, Distance, Filter,
+        PointStruct, Query, QueryPointsBuilder, QueryResponse, Sample, ScoredPoint,
+        ScrollPointsBuilder, UpsertPointsBuilder, VectorParamsBuilder,
+        vectors_output::VectorsOptions, with_payload_selector,
     },
 };
 use serde::Deserialize;
@@ -68,7 +69,7 @@ pub fn get_neighbors_from_response(response: &QueryResponse) -> Vec<Entry> {
         .filter_map(|v| v.payload.get("word"))
         .map(|i| i.as_str().unwrap());
 
-    let embeds = response.result.iter().take(2).filter_map(get_inner_vec);
+    let embeds = response.result.iter().filter_map(get_inner_vec);
 
     words
         .zip(embeds)
@@ -95,7 +96,7 @@ impl Qdrnt {
         // create collection
         self.create_collection(
             CreateCollectionBuilder::new(collection).vectors_config(
-                VectorParamsBuilder::new(entries[0].embedding.len() as u64, Distance::Euclid)
+                VectorParamsBuilder::new(entries[0].embedding.len() as u64, Distance::Cosine)
                     .datatype(Datatype::Float16),
             ),
         )
@@ -123,26 +124,6 @@ impl Qdrnt {
         Ok(vectors)
     }
 
-    pub async fn explore_with_conds(
-        &self,
-        query: &Vec<f32>,
-        condition: Filter,
-        n: u64,
-    ) -> Result<Vec<Entry>> {
-        let response = self
-            .query(
-                QueryPointsBuilder::new(&self.collection)
-                    .query(Query::new_nearest(query.clone()))
-                    .with_payload(true)
-                    .with_vectors(true)
-                    .filter(condition)
-                    .limit(n),
-            )
-            .await?;
-
-        Ok(get_neighbors_from_response(&response))
-    }
-
     pub async fn get_embedding(&self, word: String) -> Option<Vec<f32>> {
         let response = self
             .scroll(
@@ -154,8 +135,7 @@ impl Qdrnt {
             .await
             .ok()?;
 
-        if response.result.len() == 0{
-            println!("WARN: word not found");
+        if response.result.len() == 0 {
             return None;
         }
         response.result[0]
@@ -186,5 +166,14 @@ impl Qdrnt {
             .to_owned();
 
         Ok(word)
+    }
+
+    pub async fn count_points(&self) -> Option<u64> {
+        let response = self
+            .count(CountPointsBuilder::new(&self.collection))
+            .await
+            .ok()?;
+
+        response.result.map(|res| res.count)
     }
 }

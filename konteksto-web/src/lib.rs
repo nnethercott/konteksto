@@ -3,3 +3,4 @@ pub mod routes;
 pub mod db;
 pub mod config;
 pub mod state;
+pub mod errors;

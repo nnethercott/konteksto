@@ -5,6 +5,7 @@ use konteksto_web::{config::{DbConfig, ServerConfig, Settings}, server::App};
 #[tokio::main(flavor="current_thread")]
 async fn main() -> anyhow::Result<()>{
     let args = Args::parse();
+    dbg!("{:?}", &args);
 
     let config = Settings{
         server: ServerConfig{host: "0.0.0.0".into(), port: 8000},

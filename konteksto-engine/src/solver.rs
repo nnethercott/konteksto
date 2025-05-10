@@ -1,3 +1,5 @@
+use crate::clients::Entry;
+use crate::clients::qdrant::get_neighbors_from_response;
 use crate::config::OptimizerConfig;
 use crate::errors::Result;
 use crate::{
@@ -7,7 +9,7 @@ use crate::{
 use async_trait::async_trait;
 use futures::future::join_all;
 use ndarray::{Array1, Array2, Axis};
-use qdrant_client::qdrant::{Condition, Filter};
+use qdrant_client::qdrant::{Condition, Filter, Query, QueryPointsBuilder};
 
 pub type Attempt = (String, u32);
 
@@ -36,10 +38,7 @@ where
     loop {
         match solver.next_step(prev).await.unwrap() {
             Step::Next(attempt, next) => {
-                println!(
-                    r#"guess: {:?}, best: {:?}"#,
-                    attempt, solver.current_best()
-                );
+                println!(r#"guess: {:?}, best: {:?}"#, attempt, solver.current_best());
                 prev = next
             }
             other => return other, // Done or Bailed
@@ -86,7 +85,7 @@ impl SolverState {
         Self {
             iter: 0,
             grad: Array1::zeros(1),
-            best: ("init".to_string(), 20000),
+            best: ("init".to_string(), 30000),
             blacklist: vec![],
             settings,
         }
@@ -123,6 +122,7 @@ impl Solver {
 
     /// radomly generate seed at game start
     pub async fn generate_seed(&self, from: u64) -> Result<Vec<f32>> {
+        println!("size of collection: {:?}", self.qdrant.count_points().await);
         let vecs = &self.qdrant.get_random_vecs(from).await?;
 
         let dim = vecs[0].len();
@@ -140,6 +140,30 @@ impl Solver {
 
         Ok(seed)
     }
+
+    /// retrieve nearest neighbors from embedding that have not been visited already
+    pub async fn query_unseen(&self, embedding: Vec<f32>, howmany: u64) -> Result<Vec<Entry>> {
+        let conds: Vec<Condition> = self
+            .state
+            .blacklist
+            .iter()
+            .map(|w| Condition::matches("word", w.clone()))
+            .collect();
+
+        let response = self
+            .qdrant
+            .query(
+                QueryPointsBuilder::new(&self.qdrant.collection)
+                    .query(Query::new_nearest(embedding))
+                    .with_payload(true)
+                    .with_vectors(true)
+                    .filter(Filter::must_not(conds))
+                    .limit(howmany),
+            )
+            .await?;
+
+        Ok(get_neighbors_from_response(&response))
+    }
 }
 
 #[async_trait]
@@ -151,28 +175,16 @@ impl LinearSolver for Solver {
             return Ok(Step::Bailed(self.current_best()));
         }
         self.state.iter += 1;
-
         let dim = query.len();
 
         // explore nearby samples with blacklist
-        let conds: Vec<Condition> = self
-            .state
-            .blacklist
-            .iter()
-            .map(|w| Condition::matches("word", w.clone()))
-            .collect();
-
-        let neighbors = self
-            .qdrant
-            .explore_with_conds(&query, Filter::must_not(conds), 3)
-            .await?;
+        let neighbors = self.query_unseen(query.clone(), 2).await?;
 
         // prevent from exploring those words next iteration (tabu-like)
         self.ban_words(neighbors.iter().map(|e| e.word.clone()).collect());
 
-        // try each guess with contexto api
+        // get scores from contexto api
         let ranks = join_all(neighbors.iter().map(|entry| self.play(&entry.word))).await;
-
         let mut scored_neighbors: Vec<_> = neighbors
             .into_iter()
             .zip(ranks)
@@ -188,9 +200,11 @@ impl LinearSolver for Solver {
         // find optimal neighbor
         scored_neighbors.sort_by_key(|(_, _, rank)| *rank);
         let (best_word, best_embedding, best_rank) = &scored_neighbors[0];
-        let attempt = (best_word.to_owned(), *best_rank);
 
-        // if current score is worse (within a tolerance) don't explore
+        let attempt = (best_word.to_owned(), *best_rank);
+        let (_, prev_rank) = self.state.best;
+
+        // if current score is worse (within a tolerance) don't update position
         if *best_rank < self.state.best.1 {
             self.state.best = attempt.clone();
         } else if *best_rank > self.state.settings.margin {
@@ -207,7 +221,7 @@ impl LinearSolver for Solver {
         let chosen = Array1::from_shape_vec(dim, best_embedding.clone())?;
 
         let dir = &chosen - &origin;
-        let g = dir * (self.state.best.1 as f32) / (*best_rank as f32);
+        let g = dir * (prev_rank as f32) / (*best_rank as f32);
 
         let beta = self.state.settings.beta;
         self.state.grad = beta * &self.state.grad + (1.0 - beta) * g;
@@ -217,8 +231,7 @@ impl LinearSolver for Solver {
     }
 
     fn current_best(&self) -> (String, u32) {
-        let best = &self.state.best;
-        (best.0.clone(), best.1.clone())
+        self.state.best.clone()
     }
 
     fn reset(&mut self) {

@@ -5,9 +5,14 @@ Solving [Contexto](https://contexto.me/en/) using greedy [hill climbing](https:/
 
 # Structure of repo
 * `konteksto-builder` : code used to build dataset and embeddings
-* `konteksto-engine` : Rust implementation of our hill climbing algorithm (main logic [here](https://github.com/nnethercott/konteksto/blob/main/konteksto-engine/src/solver.rs#L173))
+* `konteksto-engine` : Rust implementation of our hill climbing algorithm (main logic [here](https://github.com/nnethercott/konteksto/blob/main/konteksto-engine/src/solver.rs#L173)). [Algorithm below](#solver). 
 * `konteksto-web` : clone of contexto.me but with suggestions functionality
 
+## The stack 
+* [Qdrant](https://github.com/qdrant/qdrant) as a vector store
+* [fastembed](https://github.com/qdrant/fastembed) as an embeddings generator
+* Sqlite database for persisting attempts
+* Maud, Axum, sqlx, HTMX for a reactive Rust web app 
 
 # Running the code
 You can run Konteksto in either standalone mode as a CLI or a web app. To simplify your life I've pushed [a Docker image](https://hub.docker.com/repository/docker/nnethercott/konteksto/general) with all embeddings for each language baked into the layers to Docker Hub already. 
@@ -43,7 +48,7 @@ Options:
 [![asciicast](https://asciinema.org/a/7YKKIisc5J5uvDfLXtkJb2n3f.svg)](https://asciinema.org/a/7YKKIisc5J5uvDfLXtkJb2n3f)
 
 ## web
-A wrapper around Contexto built using axum, sqlx, maud, and htmx providing word suggestions.
+A wrapper around Contexto built using axum, sqlx, maud, and htmx providing word suggestions. Proxies scoring requests to contexto.me. 
 
 To play in either "en", "pt", or "es" simply run:
 ```
@@ -81,3 +86,10 @@ The grpc client is further used in addition to Rust to speed up the initial inde
 Heuristically the algorithm starts from an initial seed and modifies its search direction by exploring points in its neighborhood. The main difference between this algo and gradient descent is the greedy position moves; we accept only moves to words with lower scores. The contour plots for each are quite similar though;
 
 ![](assets/contour.png)
+
+# Limitations 
+* Depending on the inital seed the convergence behaviour of the algorithm can be poor. This can be remedied with multiple restarts. 
+* A growing list of banned words with each iteration adds overhead in the qdrant filtering. We can overcome this in part by clearing the list after a successful move has been made.
+* We're only sampling 2 neighbors near a given query, as such we have a course estimate of the "gradient".
+* Iterative convergence is probably not the most optimal solution to this problem. Humans would solve it by guessing randomly until receiving a positive signal, then iterating from there. We kind of address this with random restarts, but its not as streamlined.
+* 

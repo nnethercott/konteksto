@@ -1,12 +1,6 @@
-use crate::{db::Attempt, errors::Result as AppResult, server::App, state::AppState};
-use axum::{
-    Router,
-    extract::{Path, State},
-    response::IntoResponse,
-};
-use konteksto_engine::config::Lang;
+use crate::{db::Attempt, errors::Result as AppResult, state::AppState};
+use axum::extract::{Path, State};
 use maud::{DOCTYPE, Markup, Render, html};
-use sqlx::query::Query;
 
 pub async fn main(
     Path(game_id): Path<u32>,

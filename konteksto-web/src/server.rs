@@ -3,7 +3,6 @@ use crate::{
     routes::get_routes,
     state::{AppState, InnerState},
 };
-use anyhow::Result;
 use axum::Router;
 use std::sync::Arc;
 use tokio::net::TcpListener;

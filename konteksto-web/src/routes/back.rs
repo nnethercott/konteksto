@@ -1,6 +1,5 @@
-use anyhow::Result;
 use axum::Form;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use maud::{Markup, html};
 use serde::Deserialize;
 
@@ -26,7 +25,7 @@ pub async fn play(
     app_state.sqlite.register_guess(&word, score).await?;
 
     // update recommender engine
-    app_state.notify_solver(word).await;
+    app_state.notify_solver(word).await?;
 
     Ok(())
 }
@@ -36,7 +35,7 @@ pub async fn suggest(
     Path(game_id): Path<u32>,
     State(AppState(app_state)): State<AppState>,
 ) -> AppResult<Markup> {
-    app_state.maybe_reset(game_id).await;
+    app_state.maybe_reset(game_id).await?;
 
     let suggestion = app_state.suggestion.lock().await.clone();
     println!("{}", suggestion);

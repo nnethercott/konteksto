@@ -3,7 +3,6 @@ use anyhow::Result;
 use konteksto_engine::{
     Solver,
     clients::Contexto,
-    config::Lang,
     solver::{LinearSolver, Step},
 };
 use std::{ops::Deref, sync::Arc};

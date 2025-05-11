@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
         seeds.push(solver.generate_seed(1).await?);
     }
 
-    let best = solve_with_restarts(&mut solver, seeds, &config.optimizer_config).await;
+    let best = solve_with_restarts(&mut solver, seeds).await;
     dbg!("{:?}", best);
 
     Ok(())

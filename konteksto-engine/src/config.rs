@@ -39,22 +39,6 @@ impl FromStr for Lang {
 
 #[derive(Parser, Serialize, Deserialize, Debug, Clone)]
 pub struct Args {
-    #[serde(flatten)]
-    #[clap(flatten)]
-    pub game_config: GameConfig,
-
-    #[serde(flatten)]
-    #[clap(flatten)]
-    pub qdrant_config: QdrntConfig,
-
-    #[serde(flatten)]
-    #[clap(flatten)]
-    pub optimizer_config: OptimizerConfig,
-}
-
-#[derive(Parser, Serialize, Deserialize, Debug, Copy, Clone)]
-pub struct GameConfig {
-    /// id of game as seen on screen
     #[clap(long, default_value_t = 42)]
     pub game_id: u32,
 
@@ -62,16 +46,14 @@ pub struct GameConfig {
     #[serde(default)]
     #[clap(short, long, default_value = "en")]
     pub lang: Lang,
-}
 
-#[derive(Parser, Serialize, Deserialize, Debug, Clone)]
-pub struct QdrntConfig {
     /// grpc port where qdrant db is running on
     #[clap(long, env = QDRANT_SERVICE_GRPC_PORT, default_value_t=6334)]
     pub grpc_port: u32,
 
-    #[clap(long, default_value = "en")]
-    pub collection: String,
+    #[serde(flatten)]
+    #[clap(flatten)]
+    pub optimizer_config: OptimizerConfig,
 }
 
 #[derive(Parser, Default, Serialize, Deserialize, Debug, Copy, Clone)]

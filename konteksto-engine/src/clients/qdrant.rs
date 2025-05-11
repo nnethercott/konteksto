@@ -2,10 +2,10 @@ use anyhow::Result;
 use qdrant_client::{
     Payload, Qdrant,
     qdrant::{
-        Condition, ContextInputBuilder, CountPointsBuilder, CreateCollectionBuilder, Datatype,
+        Condition, CountPointsBuilder, CreateCollectionBuilder, Datatype,
         Distance, Filter, PointStruct, Query, QueryPointsBuilder, QueryResponse,
         RecommendInputBuilder, Sample, ScoredPoint, ScrollPointsBuilder, UpsertPointsBuilder,
-        VectorParamsBuilder, vectors_output::VectorsOptions, with_payload_selector,
+        VectorParamsBuilder, vectors_output::VectorsOptions,
     },
 };
 use serde::Deserialize;
@@ -13,7 +13,7 @@ use serde_json::json;
 use std::ops::Deref;
 use uuid::Uuid;
 
-use crate::config::QdrntConfig;
+use crate::Args;
 
 /// jsonl schema from python dump
 #[derive(Deserialize, Debug)]
@@ -81,11 +81,11 @@ pub fn get_neighbors_from_response(response: &QueryResponse) -> Vec<Entry> {
 }
 
 impl Qdrnt {
-    pub fn new(config: QdrntConfig) -> Result<Self> {
+    pub fn new(config: Args) -> Result<Self> {
         let grpc_port = format!("http://localhost:{}", &config.grpc_port);
         let inner = Qdrant::from_url(&grpc_port).build()?;
 
-        let collection = config.collection.to_string();
+        let collection = config.lang.to_string();
 
         Ok(Self { inner, collection })
     }

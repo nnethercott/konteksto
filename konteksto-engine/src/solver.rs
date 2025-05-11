@@ -50,13 +50,11 @@ where
             other => return other, // Done or Bailed
         }
     }
-    Step::Bailed(solver.current_best())
 }
 
 pub async fn solve_with_restarts<S>(
     solver: &mut S,
     seeds: Vec<S::Target>,
-    settings: &OptimizerConfig,
 ) -> Attempt
 where
     S: LinearSolver,
@@ -107,7 +105,7 @@ pub struct Solver {
 
 impl Solver {
     pub fn new(config: Args, qdrant: Qdrnt) -> Self {
-        let contexto = Contexto::new(config.game_config.lang, config.game_config.game_id);
+        let contexto = Contexto::new(config.lang, config.game_id);
         let state = SolverState::from_config(config.optimizer_config);
 
         Self {

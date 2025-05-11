@@ -5,6 +5,7 @@ use konteksto_engine::{
     clients::Contexto,
     solver::{LinearSolver, Step},
 };
+use tracing::info;
 use std::{ops::Deref, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -35,7 +36,7 @@ impl InnerState {
         // random seed for suggestion
         let random_vec = engine.generate_seed(1).await?;
         let random_word = engine.qdrant.get_word(random_vec).await?;
-        println!("random: {}", &random_word);
+        info!("random: {}", &random_word);
 
         Ok(Self {
             sqlite: SqliteClient::new(pool),
@@ -50,7 +51,7 @@ impl InnerState {
         let engine = &mut self.engine.lock().await;
 
         if game_id != engine.contexto.game_id {
-            println!("updating to game {}", game_id);
+            info!("updating to game {}", game_id);
 
             // solver
             engine.reset();
@@ -95,14 +96,12 @@ impl InnerState {
         let prev_best = solver.current_best();
         let suggestion = match solver.next_step(embed).await? {
             Step::Next(attempt, next_query) => {
-                println!("best: {:?}, attempt: {:?}", &prev_best, &attempt);
+                info!("best: {:?}, attempt: {:?}", &prev_best, &attempt);
 
                 // if no change re-use a word near the local min
                 let best_query = if attempt.1 > prev_best.1 {
-                    println!("algo wrong");
                     solver.qdrant.get_embedding(prev_best.0).await.unwrap()
                 } else {
-                    println!("algo right");
                     next_query
                 };
 
@@ -112,7 +111,6 @@ impl InnerState {
             Step::Done => solver.current_best().0,
             _ => unreachable!(),
         };
-        println!("suggestion: {}", &suggestion);
 
         {
             let mut s = self.suggestion.lock().await;

@@ -20,8 +20,6 @@ pub async fn play(
     app_state.maybe_reset(game_id).await?;
 
     let score = app_state.play(&word).await?;
-    println!("score: {}", score);
-
     app_state.sqlite.register_guess(&word, score).await?;
 
     // update recommender engine
@@ -38,7 +36,6 @@ pub async fn suggest(
     app_state.maybe_reset(game_id).await?;
 
     let suggestion = app_state.suggestion.lock().await.clone();
-    println!("{}", suggestion);
 
     // swaps outer html
     Ok(html! {

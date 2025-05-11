@@ -4,6 +4,7 @@ use crate::{
     state::{AppState, InnerState},
 };
 use axum::Router;
+use tracing::error;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
@@ -29,7 +30,7 @@ impl App {
 
         #[allow(unused_variables)]
         if let Err(e) = axum::serve(listener, self.app.with_state(state)).await {
-            todo!()
+            error!("server failed to start");
         }
 
         Ok(())

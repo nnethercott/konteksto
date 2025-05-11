@@ -27,6 +27,7 @@ impl App {
         let state = InnerState::from_config(&self.config).await?;
         let state = AppState(Arc::new(state));
 
+        #[allow(unused_variables)]
         if let Err(e) = axum::serve(listener, self.app.with_state(state)).await {
             todo!()
         }

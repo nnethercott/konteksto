@@ -181,7 +181,7 @@ impl LinearSolver for Solver {
         let dim = query.len();
 
         // explore nearby samples with blacklist
-        let neighbors = self.query_unseen(query.clone(), 2).await?;
+        let neighbors = self.query_unseen(query.clone(), 3).await?;
 
         // prevent from exploring those words next iteration (tabu-like)
         self.ban_words(neighbors.iter().map(|e| e.word.clone()).collect());

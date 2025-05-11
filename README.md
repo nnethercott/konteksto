@@ -1,6 +1,7 @@
 # Konteksto
 Solving [Contexto](https://contexto.me/en/) using greedy [hill climbing](https://en.wikipedia.org/wiki/Hill_climbing) with momentum.
-![]("assets/cli.png")
+
+![](assets/cli.png)
 
 # Running the code
 You can run Konteksto in either standalone mode as a CLI or a web app. In standalone the solver iterates automatically towards a solution, while in the web app users manually drive the solver state through word submissions.

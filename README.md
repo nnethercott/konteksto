@@ -15,7 +15,7 @@ Solving [Contexto](https://contexto.me/en/) using greedy [hill climbing](https:/
 * Maud, Axum, sqlx, HTMX for a reactive Rust web app 
 
 # Running the code
-You can run Konteksto in either standalone mode as a CLI or a web app. To simplify your life I've pushed [a Docker image](https://hub.docker.com/repository/docker/nnethercott/konteksto/general) with all embeddings for each language baked into the layers to Docker Hub already. 
+You can run Konteksto in either standalone mode as a CLI or a web app. An associated [Docker image](https://hub.docker.com/repository/docker/nnethercott/konteksto/general) with all embeddings for each language baked into the layers is available on the Docker Hub. 
 
 In standalone the solver iterates automatically in real time towards a solution, while in the web app users manually drive the solver state through word submissions.
 
@@ -92,4 +92,3 @@ Heuristically the algorithm starts from an initial seed and modifies its search 
 * A growing list of banned words with each iteration adds overhead in the qdrant filtering. We can overcome this in part by clearing the list after a successful move has been made.
 * We're only sampling 2 neighbors near a given query, as such we have a course estimate of the "gradient".
 * Iterative convergence is probably not the most optimal solution to this problem. Humans would solve it by guessing randomly until receiving a positive signal, then iterating from there. We kind of address this with random restarts, but its not as streamlined.
-* 

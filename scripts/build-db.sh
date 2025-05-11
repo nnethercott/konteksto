@@ -8,6 +8,7 @@ fi
 for lang in en pt-br es; do
   WORDS="data/words/$lang-words.txt"
   EMBEDS="data/embeds/$lang-embeds.txt"
+  N=500
 
   if [ "$lang" = "en" ]; then
     MODEL="BAAI/bge-small-en-v1.5"
@@ -17,7 +18,7 @@ for lang in en pt-br es; do
 
   # build search space from Contexto API
   if [ ! -f "$WORDS" ]; then
-    uv run konteksto-builder/scrape.py --lang "$lang" --out-file "$WORDS"
+    uv run konteksto-builder/scrape.py --lang "$lang" --out-file "$WORDS" --n-past-games "$N"
   fi
 
   # generate embeddings

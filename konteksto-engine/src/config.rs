@@ -4,6 +4,7 @@ use clap::Parser;
 use serde::{self, Deserialize, Serialize};
 
 const QDRANT_SERVICE_GRPC_PORT: &str = "QDRANT__SERVICE__GRPC_PORT";
+const QDRANT_SERVICE_GRPC_HOST: &str = "QDRANT__SERVICE__GRPC_HOST";
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -50,6 +51,9 @@ pub struct Args {
     /// grpc port where qdrant db is running on
     #[clap(long, env = QDRANT_SERVICE_GRPC_PORT, default_value_t=6334)]
     pub grpc_port: u32,
+
+    #[clap(long, env = QDRANT_SERVICE_GRPC_HOST, default_value="localhost")]
+    pub grpc_host: String,
 
     #[serde(flatten)]
     #[clap(flatten)]

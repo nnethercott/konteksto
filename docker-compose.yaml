@@ -1,14 +1,21 @@
-version: '3'
 services:
-  tui:
-    image: "nate/tui-when-im-done"
   qdrant:
     image: "qdrant/qdrant:latest"
     ports: 
+      - "6333:6333"
       - "6334:6334"
     environment:
       QDRANT__SERVICE__GRPC_PORT: "6334"
     volumes: 
       - "./data/qdrant:/qdrant/storage"
-
+  konteksto:
+    image: "nnethercott/konteksto:latest"
+    command: ./wait-for-qdrant.sh --web-port=5049 --lang ${GAME_LANG:-en}
+    ports:
+      - "5049:5049"
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: "6334"
+      QDRANT__SERVICE__GRPC_HOST: "qdrant"
+    depends_on:
+      - qdrant
 

@@ -82,7 +82,7 @@ pub fn get_neighbors_from_response(response: &QueryResponse) -> Vec<Entry> {
 
 impl Qdrnt {
     pub fn new(config: Args) -> Result<Self> {
-        let grpc_port = format!("http://localhost:{}", &config.grpc_port);
+        let grpc_port = format!("http://{}:{}", &config.grpc_host, &config.grpc_port);
         let inner = Qdrant::from_url(&grpc_port).build()?;
 
         let collection = config.lang.to_string();
@@ -97,7 +97,7 @@ impl Qdrnt {
         self.create_collection(
             CreateCollectionBuilder::new(collection).vectors_config(
                 VectorParamsBuilder::new(entries[0].embedding.len() as u64, Distance::Cosine)
-                    .datatype(Datatype::Float16),
+                    .datatype(Datatype::Float32),
             ),
         )
         .await?;

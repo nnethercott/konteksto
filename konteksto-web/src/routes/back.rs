@@ -1,8 +1,7 @@
 use anyhow::Result;
-use axum::extract::{Path, Query, State};
 use axum::Form;
-use konteksto_engine::config::Lang;
-use maud::{html, Markup};
+use axum::extract::{Path, Query, State};
+use maud::{Markup, html};
 use serde::Deserialize;
 
 use crate::errors::Result as AppResult;
@@ -15,11 +14,11 @@ pub struct PlayQuery {
 
 /// POST `api/{lang}/game/{id}/play`
 pub async fn play(
-    Path((lang, game_id)): Path<(Lang, u32)>,
+    Path(game_id): Path<u32>,
     State(AppState(app_state)): State<AppState>,
     Form(PlayQuery { word }): Form<PlayQuery>,
 ) -> AppResult<()> {
-    app_state.maybe_reset(lang, game_id).await?;
+    app_state.maybe_reset(game_id).await?;
 
     let score = app_state.play(&word).await?;
     println!("score: {}", score);
@@ -34,10 +33,10 @@ pub async fn play(
 
 /// POST `api/{lang}/game/{id}/suggest`
 pub async fn suggest(
-    Path((lang, game_id)): Path<(Lang, u32)>,
+    Path(game_id): Path<u32>,
     State(AppState(app_state)): State<AppState>,
 ) -> AppResult<Markup> {
-    app_state.maybe_reset(lang, game_id).await;
+    app_state.maybe_reset(game_id).await;
 
     let suggestion = app_state.suggestion.lock().await.clone();
     println!("{}", suggestion);
@@ -52,7 +51,7 @@ pub async fn suggest(
             placeholder="type a word"
             value=(suggestion)
             hx-trigger="keydown[key==='Enter'&&!shiftKey]"
-            hx-post=(format!("/api/{}/game/{}/play", lang.to_string(), game_id))
+            hx-post=(format!("/api/game/{}/play", game_id))
             hx-on::after-request="if(event.detail.successful) window.location.reload();";
     })
 }

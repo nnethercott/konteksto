@@ -9,33 +9,28 @@ use maud::{DOCTYPE, Markup, Render, html};
 use sqlx::query::Query;
 
 pub async fn main(
-    Path((lang, game_id)): Path<(Lang, u32)>,
+    Path(game_id): Path<u32>,
     State(AppState(app)): State<AppState>,
 ) -> AppResult<Markup> {
-    app.maybe_reset(lang, game_id).await?;
+    app.maybe_reset(game_id).await?;
 
     // get attempts ordered by score
     let mut guesses = app.sqlite.all_guesses().await?;
     guesses.sort_by_key(|a| a.score);
 
-    let home = Home {
-        lang,
-        game_id,
-        guesses,
-    };
+    let home = Home { game_id, guesses };
     Ok(home.render())
 }
 
 /// home page for the app
 pub struct Home {
     game_id: u32,
-    lang: Lang,
     guesses: Vec<Attempt>,
 }
 
 impl Render for Home {
     fn render(&self) -> Markup {
-        let api_stub = format!("/api/{}/game/{}", self.lang.to_string(), self.game_id);
+        let api_stub = format!("/api/game/{}", self.game_id);
 
         html! {
             (DOCTYPE)

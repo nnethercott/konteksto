@@ -38,7 +38,13 @@ where
     loop {
         match solver.next_step(prev).await.unwrap() {
             Step::Next(attempt, next) => {
-                println!(r#"guess: {:?}, best: {:?}"#, attempt, solver.current_best());
+                println!(
+                    r#"guess: ({:<12}, {:>6}), best: ({:<12}, {:>6})"#,
+                    attempt.0,
+                    attempt.1,
+                    solver.current_best().0,
+                    solver.current_best().1
+                );
                 prev = next
             }
             other => return other, // Done or Bailed
@@ -51,7 +57,7 @@ pub async fn solve_with_restarts<S>(
     solver: &mut S,
     seeds: Vec<S::Target>,
     settings: &OptimizerConfig,
-) -> (String, u32)
+) -> Attempt
 where
     S: LinearSolver,
     <S as LinearSolver>::Target: PartialEq,
@@ -59,7 +65,7 @@ where
     let mut sols = vec![];
 
     for seed in seeds {
-        println!("\nnew seed");
+        println!("\nNew seed");
         if solve(seed, solver).await == Step::Done {
             return solver.current_best();
         }
@@ -68,8 +74,8 @@ where
         solver.reset();
     }
 
-    let best = sols.into_iter().min_by_key(|(_, k)| *k).unwrap();
-    best
+    sols.sort_by_key(|entry| entry.1);
+    sols.remove(0)
 }
 
 struct SolverState {
@@ -122,7 +128,6 @@ impl Solver {
 
     /// radomly generate seed at game start
     pub async fn generate_seed(&self, from: u64) -> Result<Vec<f32>> {
-        println!("size of collection: {:?}", self.qdrant.count_points().await);
         let vecs = &self.qdrant.get_random_vecs(from).await?;
 
         let dim = vecs[0].len();

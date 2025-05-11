@@ -2,10 +2,10 @@ use anyhow::Result;
 use qdrant_client::{
     Payload, Qdrant,
     qdrant::{
-        Condition, CountPointsBuilder, CreateCollectionBuilder, Datatype, Distance, Filter,
-        PointStruct, Query, QueryPointsBuilder, QueryResponse, Sample, ScoredPoint,
-        ScrollPointsBuilder, UpsertPointsBuilder, VectorParamsBuilder,
-        vectors_output::VectorsOptions, with_payload_selector,
+        Condition, ContextInputBuilder, CountPointsBuilder, CreateCollectionBuilder, Datatype,
+        Distance, Filter, PointStruct, Query, QueryPointsBuilder, QueryResponse,
+        RecommendInputBuilder, Sample, ScoredPoint, ScrollPointsBuilder, UpsertPointsBuilder,
+        VectorParamsBuilder, vectors_output::VectorsOptions, with_payload_selector,
     },
 };
 use serde::Deserialize;
@@ -175,5 +175,21 @@ impl Qdrnt {
             .ok()?;
 
         response.result.map(|res| res.count)
+    }
+
+    pub async fn context_search(&self, positive_context: Vec<Vec<f32>>, n: u64) -> Result<Vec<Entry>>{
+
+        let mut context = RecommendInputBuilder::default();
+        for example in positive_context{
+            context = context.add_positive(example);
+        }
+
+        let response = self.query(
+            QueryPointsBuilder::new("{collection_name}")
+                .query(context.build())
+                .limit(n),
+        ).await?;
+
+        Ok(get_neighbors_from_response(&response))
     }
 }

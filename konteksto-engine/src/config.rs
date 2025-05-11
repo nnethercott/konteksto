@@ -5,11 +5,12 @@ use serde::{self, Deserialize, Serialize};
 
 const QDRANT_SERVICE_GRPC_PORT: &str = "QDRANT__SERVICE__GRPC_PORT";
 
-#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Lang {
     #[default]
     En,
+    #[serde(rename = "pt-br")]
     Pt,
     Es,
 }
@@ -17,7 +18,7 @@ impl ToString for Lang {
     fn to_string(&self) -> String {
         match self {
             Lang::En => "en".to_string(),
-            Lang::Pt => "pt".to_string(),
+            Lang::Pt => "pt-br".to_string(),
             Lang::Es => "es".to_string(),
         }
     }
@@ -36,7 +37,7 @@ impl FromStr for Lang {
     }
 }
 
-#[derive(Parser, Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Parser, Serialize, Deserialize, Debug, Clone)]
 pub struct Args {
     #[serde(flatten)]
     #[clap(flatten)]
@@ -63,14 +64,14 @@ pub struct GameConfig {
     pub lang: Lang,
 }
 
-#[derive(Parser, Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Parser, Serialize, Deserialize, Debug, Clone)]
 pub struct QdrntConfig {
     /// grpc port where qdrant db is running on
     #[clap(long, env = QDRANT_SERVICE_GRPC_PORT, default_value_t=6334)]
     pub grpc_port: u32,
 
     #[clap(long, default_value = "en")]
-    pub collection: Lang,
+    pub collection: String,
 }
 
 #[derive(Parser, Default, Serialize, Deserialize, Debug, Copy, Clone)]

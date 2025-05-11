@@ -47,25 +47,24 @@ impl InnerState {
     }
 
     /// manual reset
-    pub async fn maybe_reset(&self, lang: Lang, game_id: u32) -> Result<()> {
+    pub async fn maybe_reset(&self, game_id: u32) -> Result<()> {
         let engine = &mut self.engine.lock().await;
 
-        if lang != engine.contexto.lang || game_id != engine.contexto.game_id {
-            // state
-            println!("updating to {:?} and {}", &lang, game_id);
-            engine.qdrant.collection = lang.to_string();
-            engine.contexto = Contexto::new(lang, game_id);
+        if game_id != engine.contexto.game_id {
+            println!("updating to game {}", game_id);
+
+            // solver
             engine.reset();
 
-            // api
-            {
-                *self.contexto_api.lock().await = Contexto::new(lang, game_id);
-            }
+            // api 
+            let contexto = Contexto::new(engine.contexto.lang, game_id);
+            engine.contexto = contexto.clone();
+            *self.contexto_api.lock().await = contexto;
 
             // db
             self.sqlite.delete_all_guesses().await?;
 
-            // new random suggestion
+            // & new random suggestion
             {
                 let random_vec = engine.generate_seed(1).await?;
                 let mut s = self.suggestion.lock().await;
@@ -100,10 +99,10 @@ impl InnerState {
                 println!("best: {:?}, attempt: {:?}", &prev_best, &attempt);
 
                 // if no change re-use a word near the local min
-                let best_query = if attempt.1 > prev_best.1{
+                let best_query = if attempt.1 > prev_best.1 {
                     println!("algo wrong");
                     solver.qdrant.get_embedding(prev_best.0).await.unwrap()
-                }else{
+                } else {
                     println!("algo right");
                     next_query
                 };

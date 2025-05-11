@@ -15,7 +15,7 @@ pub fn get_routes() -> Router<AppState> {
     let frontend_routes = Router::new().route("/", get(main));
 
     Router::new()
-        .route("/", get(|| async { Redirect::permanent("/en/game/42/") }))
-        .nest("/{lang}/game/{id}/", frontend_routes)
-        .nest("/api/{lang}/game/{id}/", backend_routes)
+        .route("/", get(|| async { Redirect::permanent("/game/42/") }))
+        .nest("/game/{id}/", frontend_routes)
+        .nest("/api/game/{id}/", backend_routes)
 }

@@ -6,13 +6,8 @@ if ! command -v uv; then
 fi
 
 for lang in en pt-br es; do
-  if [ "$lang" = "pt-br" ]; then
-    WORDS="data/words/pt-words.txt"
-    EMBEDS="data/embeds/pt-embeds.txt"
-  else
-    WORDS="data/words/$lang-words.txt"
-    EMBEDS="data/embeds/$lang-embeds.txt"
-  fi
+  WORDS="data/words/$lang-words.txt"
+  EMBEDS="data/embeds/$lang-embeds.txt"
 
   if [ "$lang" = "en" ]; then
     MODEL="BAAI/bge-small-en-v1.5"

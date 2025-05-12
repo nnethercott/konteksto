@@ -1,4 +1,2 @@
-
-`wget https://raw.githubusercontent.com/dwyl/english-words/refs/heads/master/words_alpha.txt`
-
-goal: reverse engineer the corpus from the game
+# konteksto-builder
+Util repo consisting of [uv scripts](https://docs.astral.sh/uv/guides/scripts/) for collecting words and producing embeddings.
